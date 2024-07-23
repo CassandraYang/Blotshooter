@@ -1,0 +1,257 @@
+from cmu_graphics import *
+import random
+
+'''You can toggle on and off aim assist by pressing 'a'.
+   There is a powerup that spawns periodically. When it is hit, it increases 
+   the blast radius of the player who hits the powerup.
+   There is a score counter that records how many times each player has won 
+   over the course of the game.
+   There is a timer that records how long it took to win the game.
+   The apperance of the building was made to look more detailed.'''
+   
+def onAppStart(app):
+    app.aimBot = False
+    app.p0Score = 0
+    app.p1Score = 0
+    reset(app)
+    
+def reset(app):
+    app.bgColor = 'azure'
+    app.buildings = 7
+    app.bWidth = app.width/app.buildings
+    app.minHeight = 120
+    app.maxHeight = app.height - 200
+    app.bHeight = [random.randrange(app.minHeight, app.maxHeight) for b in 
+                  range(app.buildings)]
+    app.colorOptions = ['fireBrick', 'orange', 'lightSalmon', 'coral']
+    app.bColors = [random.choice(app.colorOptions) for b in range(app.buildings)]
+    app.pRadius = 10
+    app.px0 = app.bWidth/2
+    app.py0 = app.height - app.bHeight[0] - app.pRadius
+    app.pFill0 = 'darkBlue'
+    app.px1 = app.width - app.bWidth/2
+    app.py1 = app.height - app.bHeight[-1] - app.pRadius
+    app.pFill1 = 'maroon'
+    app.players = [[app.px0, app.py0, app.pFill0],
+                   [app.px1, app.py1, app.pFill1]]
+    app.blotFill = None
+    app.blotR = 10
+    app.currentPlayer = 0
+    app.force = 0.03
+    app.stepsPerSecond = 40
+    app.gameOver = False
+    app.holes = [[], []]
+    app.holesR = [30, 30]
+    app.aimDx = 0
+    app.aimDy = 0
+    app.step = 0
+    app.timer = 0
+    app.wait = 0
+    app.powerUp = False
+    app.powerX = 0
+    app.powerY = 0
+    app.powerTime = random.randrange(10)
+    app.powerWait = 0
+    app.powerDuration = 0
+    app.drawPowerUp = False
+
+def onMousePress(app, mouseX, mouseY):
+    if app.blotFill == None and app.gameOver == False:
+        app.blotX, app.blotY, app.blotFill = app.players[app.currentPlayer]
+        app.blotDx = (mouseX - app.blotX) * app.force
+        app.blotDy = (mouseY - app.blotY) * app.force
+        app.wait = 0
+        
+def onMouseMove(app, mouseX, mouseY):
+    if app.gameOver == False:
+        if app.currentPlayer == 0:
+            app.aimDx = (mouseX - app.px0) * app.force
+            app.aimDy = (mouseY - app.py0) * app.force
+        else:
+            app.aimDx = (mouseX - app.px1) * app.force
+            app.aimDy = (mouseY - app.py1) * app.force
+
+def onStep(app):
+    app.step += 1
+    if app.gameOver == False:
+        if app.step % 40 == 0:
+            app.timer += 1
+            app.powerWait += 1
+        if app.powerWait == app.powerTime and app.step % 40 == 0:
+            app.powerUp = True 
+            app.drawPowerUp = True
+            app.powerX = random.randrange(app.width)
+            app.powerY = random.randrange(100)
+            app.powerDy = (app.height - app.powerY) * app.force
+        if app.powerUp:
+            if not app.drawPowerUp and app.step % 40 == 0:
+                app.powerDuration += 1
+            if app.step % 40 == 0 and app.drawPowerUp:
+                app.powerY += app.powerDy
+            if app.powerDuration == 10:
+                app.powerUp = False
+                app.powerWait = 0
+                app.powerDuration = 0
+                app.powerTime = random.randrange(30)
+    if app.blotFill != None:
+        app.blotX += app.blotDx
+        app.blotY += app.blotDy
+        app.blotDy += 0.2
+        #If blot hits powerup
+        if app.powerUp:
+            if (distance(app.powerX, app.powerY, app.blotX, app.blotY) < app.blotR + 
+            10):
+                app.holesR[app.currentPlayer] = 75
+                app.drawPowerUp = False
+        else:
+            app.holesR[app.currentPlayer] = 30
+        #If powerup goes off screen
+        if app.powerY > app.height + 10:
+            app.powerUp = False
+            app.powerWait = 0
+            app.powerDuration = 0
+            app.powerTime = random.randrange(30)
+        #If blot goes off screen
+        if (app.blotX < 0 - app.blotR or app.blotX > app.width + app.blotR or 
+            app.blotY > app.height + app.blotR):
+            app.blotFill = None
+            nextPlayer(app)
+        #If blot hits other player
+        otherPlayer = 1 - app.currentPlayer
+        otherX, otherY, otherFill = app.players[otherPlayer]
+        if (distance(otherX, otherY, app.blotX, app.blotY) < app.blotR + 
+            app.pRadius):
+                app.gameOver = True
+                app.blotFill = None
+                app.holes[app.currentPlayer].append([app.blotX, app.blotY, app.holesR[app.currentPlayer]])
+                if app.currentPlayer == 0:
+                    app.p0Score += 1
+                else:
+                    app.p1Score += 1
+        #If blot hits self
+        app.wait += 1
+        selfX, selfY, selfFill = app.players[app.currentPlayer]
+        if (distance(selfX, selfY, app.blotX, app.blotY) < app.blotR + 
+            app.pRadius) and app.wait >= 40:
+                nextPlayer(app)
+                app.gameOver = True
+                app.blotFill = None
+                app.holes[app.currentPlayer].append([app.blotX, app.blotY, app.holesR[app.currentPlayer]])
+                if app.currentPlayer == 0:
+                    app.p1Score += 1
+                else:
+                    app.p0Score += 1
+        #If blot inside hole
+        for i in range(len(app.holes)):
+            for j in range(len(app.holes[i])):
+                holeX, holeY, holeR = app.holes[i][j]
+                if (distance(holeX, holeY, app.blotX, app.blotY) < holeR - 
+                    app.blotR):
+                    return
+        #If blot hits building
+        for i in range(app.buildings):
+            left = i * app.bWidth
+            top = app.height - app.bHeight[i]
+            right = left + app.bWidth
+            bottom = app.height
+            if left <= app.blotX <= right and top <= app.blotY <= bottom:
+                app.holes[app.currentPlayer].append([app.blotX, app.blotY, app.holesR[app.currentPlayer]])
+                app.blotFill = None
+                nextPlayer(app)
+                return
+
+def distance(x0, y0, x1, y1):
+    return ((x0 - x1) ** 2 + (y0 - y1) ** 2) ** 0.5
+            
+def nextPlayer(app):
+    app.currentPlayer = abs(app.currentPlayer - 1)
+
+def onKeyPress(app, key):
+    if key == 'r':
+        reset(app)
+    elif key == 'a':
+        if app.gameOver == False:
+            app.aimBot = not app.aimBot
+
+def redrawAll(app):
+    drawBackground(app)
+    drawBuildings(app)
+    drawHoles(app)
+    drawPlayers(app)
+    drawBlot(app)
+    drawGameOver(app)
+    drawAimBot(app)
+    drawClock(app)
+    drawScores(app)
+    drawPowerUp(app)
+
+def drawBackground(app):
+    drawRect(0, 0, app.width, app.height, fill= app.bgColor)
+
+def drawBuildings(app):
+    for i in range(app.buildings):
+        x = i * app.bWidth
+        y = app.height - app.bHeight[i]
+        drawRect(x, y, app.bWidth, app.bHeight[i], fill = app.bColors[i], 
+                 border = 'black')
+        numOfWindows = (app.bHeight[i] - 50)//60
+        numOfSpaces = numOfWindows + 1
+        spaceWidth = (app.bHeight[i] - (numOfWindows * 50) - 40)/numOfSpaces
+        for j in range(numOfWindows):
+            top = app.height - app.bHeight[i] + spaceWidth + (50 * j) + (spaceWidth * j)
+            left1 = x + 10
+            left2 = x + 60
+            drawRect(left1, top, 40, 50, fill = 'grey', border = 'black')
+            drawRect(left2, top, 40, 50, fill = 'grey', border = 'black')
+        drawRect(x + app.bWidth/2 - 20, app.height - 40, 40, 40, 
+                fill = 'burlyWood', border = 'black')
+        drawRect(x - 5, y, app.bWidth + 10, 5, fill = 'white', border = 'black')
+                 
+def drawPlayers(app):
+    drawCircle(app.px0, app.py0, app.pRadius, fill = app.pFill0)
+    drawCircle(app.px1, app.py1, app.pRadius, fill = app.pFill1)
+    
+def drawBlot(app):
+    if app.blotFill != None:
+        drawCircle(app.blotX, app.blotY, app.blotR, fill = app.blotFill)
+        
+def drawGameOver(app):
+    if app.gameOver == True:
+        drawLabel(f'Player {app.currentPlayer} Wins', app.width/2, 50, size = 50, fill = 'red')
+        
+def drawHoles(app):
+    for i in range(len(app.holes[0])):
+        x, y, r = app.holes[0][i]
+        drawCircle(x, y, r, fill = 'azure')
+    for j in range(len(app.holes[1])):
+        x, y, r = app.holes[1][j]
+        drawCircle(x, y, r, fill = 'azure')
+
+def drawAimBot(app):
+    if app.aimBot == True and app.gameOver == False:
+        startX, startY, color = app.players[app.currentPlayer]
+        stepX = app.aimDx
+        stepY = app.aimDy
+        for i in range(50):
+            drawCircle(startX, startY, 5, fill = color)
+            startX += stepX
+            startY += stepY
+            stepY += 0.2
+            
+def drawClock(app):
+    drawLabel(f'Time elapsed: {app.timer}', app.width/2, app.height - 50, 
+              size = 25, fill = 'white')
+              
+def drawScores(app):
+    drawLabel(f'Player 0: {app.p0Score}', 50, 50, align = 'left', size = 16)
+    drawLabel(f'Player 1: {app.p1Score}', app.width - 50, 50, align = 'right', 
+    size = 16)
+    
+def drawPowerUp(app):
+    if app.drawPowerUp:
+        drawStar(app.powerX, app.powerY, 10, 5, fill = 'gold')
+
+def main():
+    runApp(width = 800, height = 600)
+    
+main()
